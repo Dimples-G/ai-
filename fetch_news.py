@@ -1,106 +1,153 @@
 import requests
 from datetime import datetime
+import urllib.parse
 
 # ====== 飞书 Webhook 地址 ======
 FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/1f546a5f-22c4-474e-818a-e008d54c6906"
 
 
-# ====== 微博热搜（官方API，直接GET无需cookie）======
+# ====== 代理请求（解决海外IP被屏蔽问题）======
+def fetch(url, name=""):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+    # 方法1：直接请求
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()
+    except:
+        pass
+    # 方法2：通过代理请求
+    try:
+        proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(url, safe='')}"
+        resp = requests.get(proxy_url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as e:
+        print(f"[{name}] 代理也失败: {e}")
+    return None
+
+
+# ====== 微博热搜 ======
 def get_weibo():
-    try:
-        url = "https://weibo.com/ajax/side/hotSearch"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(url, headers=headers, timeout=10)
-        data = resp.json()
-        items = data.get("data", {}).get("realtime", [])
-        results = []
-        for item in items[:10]:
-            label = item.get("label_name", "")
-            results.append({
-                "title": item.get("word", ""),
-                "heat": item.get("num", 0),
-                "label": label,
-                "url": f"https://s.weibo.com/weibo?q=%23{item.get('word', '')}%23",
-                "source": "微博热搜"
-            })
-        return [r for r in results if r["title"]]
-    except Exception as e:
-        print(f"微博热搜获取失败: {e}")
+    data = fetch("https://weibo.com/ajax/side/hotSearch", "微博热搜")
+    if not data:
         return []
-
-
-# ====== vvhan 聚合API（百度、知乎、抖音、B站等）======
-def get_vvhan(source, name):
-    try:
-        url = f"https://api.vvhan.com/api/hotlist/{source}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(url, headers=headers, timeout=10)
-        data = resp.json()
-        items = data.get("data", [])
-        results = []
-        for item in items[:5]:
-            results.append({
-                "title": item.get("title", ""),
-                "url": item.get("url", item.get("link", "")),
-                "source": name
-            })
-        return [r for r in results if r["title"]]
-    except Exception as e:
-        print(f"{name}获取失败: {e}")
-        return []
+    items = data.get("data", {}).get("realtime", [])
+    results = []
+    for item in items[:10]:
+        label = item.get("label_name", "")
+        results.append({
+            "title": item.get("word", ""),
+            "heat": item.get("num", 0),
+            "label": label,
+            "url": f"https://s.weibo.com/weibo?q=%23{item.get('word', '')}%23",
+            "source": "微博热搜"
+        })
+    return [r for r in results if r["title"]]
 
 
 # ====== 百度热搜 ======
 def get_baidu():
-    return get_vvhan("baiduRD", "百度热搜")
+    data = fetch("https://top.baidu.com/board?tab=realtime", "百度热搜")
+    if not data:
+        return []
+    items = data.get("data", {}).get("data", [])
+    results = []
+    for item in items[:8]:
+        results.append({
+            "title": item.get("word", ""),
+            "url": item.get("url", ""),
+            "source": "百度热搜"
+        })
+    return [r for r in results if r["title"]]
 
 
 # ====== 知乎热榜 ======
 def get_zhihu():
-    return get_vvhan("zhihuHot", "知乎热榜")
+    data = fetch("https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=8", "知乎热榜")
+    if not data:
+        return []
+    items = data.get("data", [])
+    results = []
+    for item in items[:8]:
+        target = item.get("target", {})
+        results.append({
+            "title": target.get("title", ""),
+            "url": f"https://www.zhihu.com/question/{target.get('id', '')}",
+            "source": "知乎热榜"
+        })
+    return [r for r in results if r["title"]]
 
 
 # ====== 抖音热点 ======
 def get_douyin():
-    return get_vvhan("douyinHot", "抖音热点")
-
-
-# ====== B站热门 ======
-def get_bilibili():
-    return get_vvhan("bili", "B站热门")
-
-
-# ====== IT之家热榜 ======
-def get_ithome():
-    return get_vvhan("itNews", "IT之家")
-
-
-# ====== 少数派热榜 ======
-def get_sspai():
-    return get_vvhan("sspai", "少数派")
+    data = fetch("https://www.douyin.com/aweme/v1/web/hot/search/list/", "抖音热点")
+    if not data:
+        return []
+    word_list = data.get("data", {}).get("word_list", [])
+    results = []
+    for item in word_list[:8]:
+        results.append({
+            "title": item.get("word", ""),
+            "url": f"https://www.douyin.com/search/{item.get('word', '')}",
+            "source": "抖音热点"
+        })
+    return [r for r in results if r["title"]]
 
 
 # ====== 36氪科技 ======
 def get_36kr():
-    try:
-        url = "https://36kr.com/api/search-column/mainsite"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(url, headers=headers, timeout=10)
-        data = resp.json()
-        items = data.get("data", {}).get("items", [])
-        results = []
-        for item in items[:8]:
-            info = item.get("templateMaterial", {})
-            results.append({
-                "title": info.get("widgetTitle", ""),
-                "summary": info.get("summary", "")[:60],
-                "url": f"https://36kr.com/p/{info.get('itemId', '')}",
-                "source": "36氪"
-            })
-        return [r for r in results if r["title"]]
-    except Exception as e:
-        print(f"36氪获取失败: {e}")
+    data = fetch("https://36kr.com/api/search-column/mainsite", "36氪")
+    if not data:
         return []
+    items = data.get("data", {}).get("items", [])
+    results = []
+    for item in items[:8]:
+        info = item.get("templateMaterial", {})
+        results.append({
+            "title": info.get("widgetTitle", ""),
+            "summary": info.get("summary", "")[:60],
+            "url": f"https://36kr.com/p/{info.get('itemId', '')}",
+            "source": "36氪"
+        })
+    return [r for r in results if r["title"]]
+
+
+# ====== Hacker News AI（海外AI，补充）======
+def get_hacker_news():
+    try:
+        story_ids = requests.get(
+            "https://hacker-news.firebaseio.com/v0/topstories.json",
+            timeout=10
+        ).json()[:30]
+    except:
+        return []
+    ai_keywords = [
+        "ai", "gpt", "llm", "claude", "gemini", "openai", "chatgpt",
+        "anthropic", "nvidia", "deepseek", "qwen", "mistral", "llama",
+        "diffusion", "copilot", "agent", "transformer", "deep learning"
+    ]
+    results = []
+    for sid in story_ids:
+        try:
+            item = requests.get(
+                f"https://hacker-news.firebaseio.com/v0/item/{sid}.json",
+                timeout=5
+            ).json()
+            if item and item.get("title"):
+                if any(k in item["title"].lower() for k in ai_keywords):
+                    results.append({
+                        "title": item["title"],
+                        "url": item.get("url", f"https://news.ycombinator.com/item?id={sid}"),
+                        "source": "Hacker News"
+                    })
+        except:
+            continue
+        if len(results) >= 5:
+            break
+    return results
 
 
 # ====== 筛选AI相关新闻 ======
@@ -111,9 +158,9 @@ def filter_ai_news(all_news):
         "智谱", "百川", "零一万物", "月之暗面", "minimax",
         "机器学习", "深度学习", "神经网络", "transformer", "llm",
         "多模态", "agent", "rag", "aigc", "生成式",
-        "自动驾驶", "具身智能", "机器人", "芯片", "算力", "gpu", "nvidia", "英伟达",
-        "华为昇腾", "寒武纪", "商汤", "科大讯飞", "百度",
-        "小米大模型", "小米ai", "字节跳动", "阿里云", "腾讯混元"
+        "自动驾驶", "具身智能", "机器人", "芯片", "算力", "gpu",
+        "nvidia", "英伟达", "华为昇腾", "寒武纪", "商汤", "科大讯飞",
+        "小米大模型", "字节跳动", "阿里云", "腾讯混元"
     ]
     ai_news = []
     other_news = []
@@ -130,24 +177,24 @@ def filter_ai_news(all_news):
 def format_news():
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 获取各来源数据
+    # 获取数据
     weibo = get_weibo()
     baidu = get_baidu()
     zhihu = get_zhihu()
     douyin = get_douyin()
-    bilibili = get_bilibili()
-    ithome = get_ithome()
-    sspai = get_sspai()
     kr = get_36kr()
+    hn = get_hacker_news()
 
-    # 合并非微博来源，用于筛选AI新闻
-    all_other = baidu + zhihu + douyin + bilibili + ithome + sspai + kr
+    # 合并非微博来源
+    all_other = baidu + zhihu + douyin + kr
     ai_news, other_top = filter_ai_news(all_other)
 
     msg = f"🌅 早安！每日新闻速递 · {today}\n\n"
+    has_content = False
 
     # 微博热搜
     if weibo:
+        has_content = True
         msg += "━━━━━━━━━━━━━━━━\n"
         msg += "🔥 微博热搜 TOP10\n\n"
         for i, item in enumerate(weibo, 1):
@@ -160,6 +207,7 @@ def format_news():
 
     # 国内AI热门
     if ai_news:
+        has_content = True
         msg += "━━━━━━━━━━━━━━━━\n"
         msg += "🤖 国内AI热门\n\n"
         seen = set()
@@ -175,8 +223,18 @@ def format_news():
                     msg += f"   🔗 {item['url']}\n"
                 msg += f"   来源：{item.get('source', '')}\n\n"
 
+    # 海外AI（补充）
+    if hn:
+        has_content = True
+        msg += "━━━━━━━━━━━━━━━━\n"
+        msg += "🌐 海外AI动态\n\n"
+        for i, item in enumerate(hn, 1):
+            msg += f"{i}. {item['title']}\n"
+            msg += f"   🔗 {item['url']}\n\n"
+
     # 其他热门
     if other_top:
+        has_content = True
         msg += "━━━━━━━━━━━━━━━━\n"
         msg += "📰 其他热门\n\n"
         seen = set()
@@ -189,8 +247,8 @@ def format_news():
                 if item.get("url"):
                     msg += f"   🔗 {item['url']}\n\n"
 
-    # 如果所有来源都失败
-    if not weibo and not ai_news and not other_top:
+    # 全部失败提示
+    if not has_content:
         msg += "⚠️ 今日新闻源暂时无法获取，请稍后再试。\n"
 
     msg += "━━━━━━━━━━━━━━━━\n"
