@@ -2,10 +2,8 @@ name: AI Daily News
 
 on:
   schedule:
-    # 每天早上7:00推送（北京时间）
-    # UTC时间 = 北京时间 - 8小时
     - cron: '0 23 * * *'
-  workflow_dispatch:  # 允许手动触发测试
+  workflow_dispatch:
 
 jobs:
   fetch-news:
