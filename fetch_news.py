@@ -1,9 +1,11 @@
 import requests
 from datetime import datetime
 
-# ====== 飞书 Webhook 地址 ======FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/1f546a5f-22c4-474e-818a-e008d54c6906"
+# ====== 飞书 Webhook 地址 ======
+FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/1f546a5f-22c4-474e-818a-e008d54c6906"
 
-# ====== 微博热搜（直接GET，无需cookie）======
+
+# ====== 微博热搜（官方API，直接GET无需cookie）======
 def get_weibo():
     try:
         url = "https://weibo.com/ajax/side/hotSearch"
@@ -16,9 +18,10 @@ def get_weibo():
             label = item.get("label_name", "")
             results.append({
                 "title": item.get("word", ""),
-                "heat": f"热度 {item.get('num', '')}",
+                "heat": item.get("num", 0),
                 "label": label,
-                "url": f"https://s.weibo.com/weibo?q=%23{item.get('word', '')}%23"
+                "url": f"https://s.weibo.com/weibo?q=%23{item.get('word', '')}%23",
+                "source": "微博热搜"
             })
         return [r for r in results if r["title"]]
     except Exception as e:
@@ -26,10 +29,10 @@ def get_weibo():
         return []
 
 
-# ====== 热门聚合API（百度、知乎、抖音、B站等）======
-def get_hot_from_api(platform, name):
+# ====== vvhan 聚合API（百度、知乎、抖音、B站等）======
+def get_vvhan(source, name):
     try:
-        url = f"https://api-hot.imsyy.top/{platform}"
+        url = f"https://api.vvhan.com/api/hotlist/{source}"
         headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, timeout=10)
         data = resp.json()
@@ -37,7 +40,7 @@ def get_hot_from_api(platform, name):
         results = []
         for item in items[:5]:
             results.append({
-                "title": item.get("title", item.get("name", "")),
+                "title": item.get("title", ""),
                 "url": item.get("url", item.get("link", "")),
                 "source": name
             })
@@ -49,32 +52,32 @@ def get_hot_from_api(platform, name):
 
 # ====== 百度热搜 ======
 def get_baidu():
-    return get_hot_from_api("baidu", "百度热搜")
+    return get_vvhan("baiduRD", "百度热搜")
 
 
 # ====== 知乎热榜 ======
 def get_zhihu():
-    return get_hot_from_api("zhihu", "知乎热榜")
+    return get_vvhan("zhihuHot", "知乎热榜")
 
 
 # ====== 抖音热点 ======
 def get_douyin():
-    return get_hot_from_api("douyin", "抖音热点")
+    return get_vvhan("douyinHot", "抖音热点")
 
 
 # ====== B站热门 ======
 def get_bilibili():
-    return get_hot_from_api("bilibili", "B站热门")
+    return get_vvhan("bili", "B站热门")
 
 
 # ====== IT之家热榜 ======
 def get_ithome():
-    return get_hot_from_api("ithome", "IT之家")
+    return get_vvhan("itNews", "IT之家")
 
 
 # ====== 少数派热榜 ======
 def get_sspai():
-    return get_hot_from_api("sspai", "少数派")
+    return get_vvhan("sspai", "少数派")
 
 
 # ====== 36氪科技 ======
@@ -100,7 +103,7 @@ def get_36kr():
         return []
 
 
-# ====== 从所有来源中筛选AI相关新闻 ======
+# ====== 筛选AI相关新闻 ======
 def filter_ai_news(all_news):
     ai_keywords = [
         "ai", "人工智能", "大模型", "gpt", "chatgpt", "claude", "gemini",
@@ -125,7 +128,7 @@ def filter_ai_news(all_news):
 
 # ====== 格式化消息 ======
 def format_news():
-    today = datetime.now().strftime("%Y-%m-%d %A")
+    today = datetime.now().strftime("%Y-%m-%d")
 
     # 获取各来源数据
     weibo = get_weibo()
@@ -137,20 +140,22 @@ def format_news():
     sspai = get_sspai()
     kr = get_36kr()
 
-    # 合并所有来源，用于筛选AI新闻
-    all_news = baidu + zhihu + douyin + bilibili + ithome + sspai + kr
-    ai_news, other_top = filter_ai_news(all_news)
+    # 合并非微博来源，用于筛选AI新闻
+    all_other = baidu + zhihu + douyin + bilibili + ithome + sspai + kr
+    ai_news, other_top = filter_ai_news(all_other)
 
     msg = f"🌅 早安！每日新闻速递 · {today}\n\n"
 
     # 微博热搜
     if weibo:
         msg += "━━━━━━━━━━━━━━━━\n"
-        msg += "🔥 微博热搜\n\n"
+        msg += "🔥 微博热搜 TOP10\n\n"
         for i, item in enumerate(weibo, 1):
             tag = f" [{item['label']}]" if item['label'] else ""
+            heat_str = f"{item['heat']:,}" if item['heat'] else ""
             msg += f"{i}. {item['title']}{tag}\n"
-            msg += f"   {item['heat']}\n"
+            if heat_str:
+                msg += f"   热度 {heat_str}\n"
             msg += f"   🔗 {item['url']}\n\n"
 
     # 国内AI热门
@@ -183,6 +188,10 @@ def format_news():
                 msg += f"{count}. [{item.get('source', '')}] {item['title']}\n"
                 if item.get("url"):
                     msg += f"   🔗 {item['url']}\n\n"
+
+    # 如果所有来源都失败
+    if not weibo and not ai_news and not other_top:
+        msg += "⚠️ 今日新闻源暂时无法获取，请稍后再试。\n"
 
     msg += "━━━━━━━━━━━━━━━━\n"
     msg += "💪 新的一天，加油！"
