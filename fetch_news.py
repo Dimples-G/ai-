@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 
 # ====== 配置 ======
-FEISHU_WEBHOOK = "把你的webhook地址粘贴到这里"
+FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/1f546a5f-22c4-474e-818a-e008d54c6906"
 
 # ====== 免费新闻源：Hacker News（科技/AI为主）======
 def get_hacker_news():
